@@ -64,7 +64,7 @@ def remove_island(object_label, noise_ratio=5., connectivity=6):
     # measure the area
     area_table, index_table = _regionprop_1d(object_label, island_label)
 
-    # remove the island
+    # remove small islands
     background = []
 
     for areas, indices in zip(area_table, index_table):
