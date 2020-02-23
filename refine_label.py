@@ -54,7 +54,8 @@ def _regionprop_nd(object_label, island_label, metric, cache=True):
     return prop_table, index_table
 
 
-def remove_island(object_label, noise_ratio=5., connectivity=6, metric='area', cval=0):
+def remove_island(object_label, noise_ratio=5., connectivity=6,
+                    metric='area', cval=0, only_largest=False):
 
     ret = object_label.copy()
     ret_shape = object_label.shape
@@ -79,11 +80,16 @@ def remove_island(object_label, noise_ratio=5., connectivity=6, metric='area', c
         areas = np.asarray(areas)[areas_sort_ind]
         indices = np.asarray(indices)[areas_sort_ind]
 
-        histogram = []
-        for i, area in enumerate(areas):
-            histogram.extend([i]*area)
+        if only_largest:
+            threshold = 0
 
-        threshold = math.ceil(np.percentile(histogram, 100.0 - noise_ratio))
+        else:
+            histogram = []
+            for i, area in enumerate(areas):
+                histogram.extend([i]*area)
+
+            threshold = math.ceil(np.percentile(histogram, 100.0 - noise_ratio))
+
         background = np.concatenate([background, indices[threshold + 1:]])
 
 
