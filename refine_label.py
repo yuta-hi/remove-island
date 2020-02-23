@@ -7,21 +7,24 @@ from skimage.measure._regionprops import _RegionProperties
 import cc3d
 import tqdm
 
+_supported_metrics = [
+    'area',
+    'bbox_area',
+    'convex_area',
+    'filled_area']
 
-def _labeling(object_label, connectivity=6):
+
+def _labeling(object_label, connectivity):
     return cc3d.connected_components(object_label, connectivity=connectivity)
 
 
-def _regionprop_1d(object_label, island_label):
+def _regionprop_nd(object_label, island_label, metric, cache=True):
 
-    assert object_label.ndim == 1
-    assert island_label.ndim == 1
-
-    # make the table of area and its index
+    # make the table of prop and its index
     n_object = np.max(object_label) + 1
     n_island = np.max(island_label) + 1
 
-    area_table = [[] for _ in range(n_object)]
+    prop_table = [[] for _ in range(n_object)]
     index_table = [[] for _ in range(n_object)]
 
     islands = ndi.find_objects(island_label)
@@ -36,33 +39,33 @@ def _regionprop_1d(object_label, island_label):
                                 i + 1,
                                 island_label,
                                 None,
-                                cache_active=False)
+                                cache_active=cache)
 
-        area = props.area
-        start = sl[0].start
-        obj = object_label[start]
+        prop = getattr(props, metric)
 
-        area_table[obj].append(area)
+        start = props.coords[0]
+        start = [slice(s, s + 1) for s in start]
+        obj = object_label[tuple(start)]
+        obj = int(np.squeeze(obj))
+
+        prop_table[obj].append(prop)
         index_table[obj].append(i + 1)
 
-    return area_table, index_table
+    return prop_table, index_table
 
 
-def remove_island(object_label, noise_ratio=5., connectivity=6):
-
-    # find the connected components
-    island_label = _labeling(object_label, connectivity)
-
-    # reshape to support both 2D and 3D array
-    object_label = object_label.ravel()
+def remove_island(object_label, noise_ratio=5., connectivity=6, metric='area', cval=0):
 
     ret = object_label.copy()
-    ret_shape = island_label.shape
+    ret_shape = object_label.shape
 
-    island_label = island_label.ravel()
+    # find the connected components, and measure the area
+    if metric not in _supported_metrics:
+        raise KeyError('metric should be in (' \
+                        + ','.join(_supported_metrics) + ')' )
 
-    # measure the area
-    area_table, index_table = _regionprop_1d(object_label, island_label)
+    island_label = _labeling(object_label, connectivity)
+    area_table, index_table = _regionprop_nd(object_label, island_label, metric)
 
     # remove small islands
     background = []
@@ -78,12 +81,14 @@ def remove_island(object_label, noise_ratio=5., connectivity=6):
 
         histogram = []
         for i, area in enumerate(areas):
-            histogram = np.concatenate([histogram, [i]*area])
+            histogram.extend([i]*area)
 
         threshold = math.ceil(np.percentile(histogram, 100.0 - noise_ratio))
         background = np.concatenate([background, indices[threshold + 1:]])
 
-    mask = np.in1d(island_label, background)
-    ret[mask] = 0
 
-    return ret.reshape(ret_shape)
+    mask = np.in1d(island_label.ravel(), background)
+    mask = mask.reshape(ret_shape)
+    ret[mask] = cval
+
+    return ret
